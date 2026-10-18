@@ -1,7 +1,3 @@
-import json
-from pathlib import Path
-
-import joblib
 import numpy as np
 from numpy.polynomial import Polynomial
 import pandas as pd
@@ -296,35 +292,3 @@ class ModelInspector:
         for sign, body in terms[1:]:
             text += f" {sign} {body}"
         return f"{target} = {text}"
-
-    @staticmethod
-    def feature_importance(model, features):
-        if isinstance(model, DecisionTreeRegressor):
-            values = model.feature_importances_
-        elif isinstance(model, Pipeline) and "clf" in model.named_steps:
-            values = model.named_steps["clf"].coef_.ravel()
-        else:
-            raise TypeError("Importance is only defined here for trees and logistic models.")
-        return pd.Series(values, index=features).sort_values(key=np.abs, ascending=False)
-
-
-class ModelRegistry:
-    def __init__(self, directory="models"):
-        self.directory = Path(directory)
-        self.directory.mkdir(parents=True, exist_ok=True)
-
-    def save(self, model, name):
-        path = self.directory / f"{name}.joblib"
-        joblib.dump(model, path)
-        return path
-
-    def load(self, name):
-        return joblib.load(self.directory / f"{name}.joblib")
-
-    def write_metadata(self, metadata):
-        path = self.directory / "metadata.json"
-        path.write_text(json.dumps(metadata, indent=2))
-        return path
-
-    def read_metadata(self):
-        return json.loads((self.directory / "metadata.json").read_text())

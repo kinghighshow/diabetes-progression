@@ -121,16 +121,6 @@ class DiabetesVisualizer:
                           xaxis=dict(showgrid=False), height=640, width=760)
         return self.save(fig, "correlation_matrix", width=760, height=640)
 
-    def standardized_boxplots(self, df, columns):
-        z = (df[columns] - df[columns].mean()) / df[columns].std()
-        fig = go.Figure()
-        for col in columns:
-            fig.add_trace(go.Box(y=z[col], name=col, marker=dict(color=self.SERIES[0], size=5),
-                                 line=dict(width=1.5), boxpoints="outliers", fillcolor="rgba(42,120,214,0.15)"))
-        fig.update_layout(title="Spread and outliers on a common scale (z-scores)", showlegend=False,
-                          yaxis_title="Standard deviations from mean")
-        return self.save(fig, "outlier_boxplots")
-
     def polynomial_family(self, models, X, y, feature="bmi"):
         xs = pd.DataFrame({feature: np.linspace(X[feature].min(), X[feature].max(), 300)})
         fig = go.Figure()
@@ -203,14 +193,6 @@ class DiabetesVisualizer:
         fig.update_layout(title=title, showlegend=False)
         return self.save(fig, name, width=1200, height=500)
 
-    def importance(self, series, title, name):
-        s = series.iloc[::-1]
-        colors = [self.SERIES[7] if v < 0 else self.SERIES[0] for v in s.values]
-        fig = go.Figure(go.Bar(x=s.values, y=s.index, orientation="h", marker=dict(color=colors),
-                               hovertemplate="%{y}: %{x:.3f}<extra></extra>"))
-        fig.update_layout(title=title, xaxis_title="Weight", height=420)
-        return self.save(fig, name, width=900, height=420)
-
     def confusion_matrix(self, cm, title, name):
         labels = ["not high risk", "high risk"]
         fig = go.Figure(go.Heatmap(
@@ -221,19 +203,3 @@ class DiabetesVisualizer:
         fig.update_layout(title=title, xaxis_title="Predicted", yaxis_title="Actual",
                           yaxis=dict(autorange="reversed", showgrid=False), xaxis=dict(showgrid=False))
         return self.save(fig, name, width=620, height=520)
-
-    def leaderboard(self, table, metric="MAE"):
-        order = table.sort_values((metric, "validation"), ascending=metric != "R2").index
-        fig = go.Figure()
-        for split in ["train", "validation"]:
-            fig.add_trace(go.Scatter(
-                x=table.loc[order, (metric, split)], y=order, mode="markers", name=split,
-                marker=dict(size=13, color=self.SPLIT_COLORS[split], line=dict(color=self.SURFACE, width=2)),
-                hovertemplate=f"%{{y}}<br>{split} {metric}: %{{x:.2f}}<extra></extra>",
-            ))
-        for model in order:
-            fig.add_shape(type="line", x0=table.loc[model, (metric, "train")], x1=table.loc[model, (metric, "validation")],
-                          y0=model, y1=model, line=dict(color=self.GRID, width=3), layer="below")
-        fig.update_layout(title=f"Part 3 leaderboard: {metric} on train vs validation", xaxis_title=metric,
-                          yaxis=dict(autorange="reversed"), height=460)
-        return self.save(fig, "part3_leaderboard", width=1000, height=460)
