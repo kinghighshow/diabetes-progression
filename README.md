@@ -36,12 +36,14 @@ Predicting one-year diabetes progression from baseline measurements and flagging
 ## Project structure
 
 ```
-├── diabetes_progression.ipynb   # analysis, report and interactive dashboard
+├── diabetes_progression.ipynb   # analysis and report
+├── dashboard.html               # standalone screening dashboard, open in any browser
 ├── src/
 │   ├── data_pipeline.py         # loading, summaries, splits
 │   ├── visuals.py               # Plotly charts and image export
 │   ├── modeling.py              # model building, evaluation, inspection
-│   └── dashboard.py             # in-notebook screening dashboard
+│   ├── dashboard.py             # exports the models to a standalone dashboard
+│   └── dashboard_template.html  # dashboard page layout
 └── requirements.txt
 ```
 
@@ -52,7 +54,11 @@ pip install -r requirements.txt
 jupyter lab diabetes_progression.ipynb
 ```
 
-Run all cells. Figures are saved to `images/`, and the last cell opens a dashboard where you adjust a patient's values and get a predicted score and high-risk probability.
+Run all cells. Figures are saved to `images/`, and the last cell writes `dashboard.html`.
+
+## Try the model
+
+Open **`dashboard.html`** in any browser. No Python or installation needed. Adjust a patient's values and the predicted score and high-risk probability update instantly.
 
 ## Limitations
 

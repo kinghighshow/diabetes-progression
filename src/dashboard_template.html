@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diabetes Progression Screener</title>
+<style>
+  :root {
+    --bg: #f4f3ef; --panel: #fcfcfb; --ink: #0b0b0b; --muted: #52514e; --line: #e2e0da;
+    --track: #e6e5e0; --blue: #2a78d6; --red: #e34948; --soft-blue: #e8f0fb; --soft-red: #fcebea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121211; --panel: #1a1a19; --ink: #f0efec; --muted: #a8a69d; --line: #2c2c2a;
+      --track: #34342f; --blue: #3987e5; --red: #e66767; --soft-blue: #1b2a3d; --soft-red: #3a1e1e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 Inter, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 16px 32px; }
+  header h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p { margin: 0 0 20px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  .field { margin-bottom: 14px; }
+  .field-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .field-top label { font-weight: 600; }
+  .field-top .unit { color: var(--muted); font-weight: 400; font-size: 13px; }
+  .field-top output { font-variant-numeric: tabular-nums; font-weight: 700; }
+  input[type=range] { width: 100%; accent-color: var(--blue); }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { flex: 1; min-width: 90px; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+                border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+  .seg button.on { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+  .result { display: grid; gap: 12px; }
+  .card { border-radius: 12px; padding: 16px 18px; background: var(--bg); border-top: 4px solid var(--accent, var(--blue)); }
+  .card .label { color: var(--muted); font-size: 13px; }
+  .card .value { font-size: 44px; font-weight: 750; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .card .note { color: var(--muted); font-size: 13px; }
+  .meter { position: relative; height: 10px; background: var(--track); border-radius: 5px; margin: 10px 0 4px; }
+  .meter .fill { height: 100%; border-radius: 5px; background: var(--accent); transition: width .2s ease; }
+  .meter .mark { position: absolute; left: 50%; top: -4px; width: 2px; height: 18px; background: var(--ink); }
+  .scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+  .verdict { padding: 12px 14px; border-radius: 10px; font-weight: 600; border-left: 5px solid var(--accent);
+             background: var(--soft); }
+  .models { margin-top: 4px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Diabetes progression screener</h1>
+    <p>Adjust a patient's baseline values. Predictions update instantly. Sliders cover the range seen in training.</p>
+  </header>
+  <div class="grid">
+    <section class="panel">
+      <h2>Patient</h2>
+      <div id="inputs"></div>
+    </section>
+    <section class="panel">
+      <h2>Score model</h2>
+      <div class="seg models" id="models"></div>
+      <h2 style="margin-top:18px">Prediction</h2>
+      <div class="result">
+        <div class="card" id="scoreCard">
+          <div class="label">Predicted progression one year after baseline</div>
+          <div class="value" id="score">-</div>
+          <div class="note" id="scoreNote"></div>
+        </div>
+        <div class="card" id="riskCard">
+          <div class="label">Probability of being high risk</div>
+          <div class="value" id="risk">-</div>
+          <div class="meter"><div class="fill" id="fill"></div><div class="mark"></div></div>
+          <div class="scale"><span>0%</span><span>50% flag line</span><span>100%</span></div>
+        </div>
+        <div class="verdict" id="verdict"></div>
+      </div>
+    </section>
+  </div>
+  <footer>
+    Score: chosen regression model. Risk: class-balanced logistic regression (test recall 0.74).
+    Built on the scikit-learn diabetes dataset (442 patients). A screening aid, not a diagnosis.
+  </footer>
+</div>
+<script>
+const DATA = __PAYLOAD__;
+const state = {};
+let model = Object.keys(DATA.regressors)[0];
+
+function standardise(spec) {
+  return spec.features.map((f, i) => (state[f] - spec.mean[i]) / spec.scale[i]);
+}
+
+function linear(spec) {
+  return standardise(spec).reduce((sum, z, i) => sum + z * spec.weights[i], spec.bias);
+}
+
+function knn(spec) {
+  const z = standardise(spec);
+  const nearest = spec.X
+    .map((row, i) => [row.reduce((s, v, j) => s + (v - z[j]) ** 2, 0), spec.y[i]])
+    .sort((a, b) => a[0] - b[0])
+    .slice(0, spec.k);
+  return nearest.reduce((s, n) => s + n[1], 0) / spec.k;
+}
+
+function predictScore(spec) {
+  return spec.type === "knn" ? knn(spec) : linear(spec);
+}
+
+function predictRisk(spec) {
+  return 1 / (1 + Math.exp(-linear(spec)));
+}
+
+function update() {
+  const score = predictScore(DATA.regressors[model]);
+  const risk = predictRisk(DATA.classifier);
+  const gap = score - DATA.threshold;
+  const flagged = risk >= 0.5;
+  const cut = Math.round(DATA.threshold);
+
+  document.getElementById("score").textContent = Math.round(score);
+  document.getElementById("scoreNote").textContent =
+    `${Math.abs(Math.round(gap))} points ${gap >= 0 ? "above" : "below"} the high-risk cut-off of ${cut}`;
+  document.getElementById("scoreCard").style.setProperty("--accent", gap >= 0 ? "var(--red)" : "var(--blue)");
+
+  const riskCard = document.getElementById("riskCard");
+  riskCard.style.setProperty("--accent", flagged ? "var(--red)" : "var(--blue)");
+  document.getElementById("risk").textContent = `${Math.round(risk * 100)}%`;
+  document.getElementById("fill").style.width = `${risk * 100}%`;
+
+  const verdict = document.getElementById("verdict");
+  verdict.style.setProperty("--accent", flagged ? "var(--red)" : "var(--blue)");
+  verdict.style.setProperty("--soft", flagged ? "var(--soft-red)" : "var(--soft-blue)");
+  verdict.textContent = flagged
+    ? "Flag for follow-up: this patient is likely in the high-risk group."
+    : "Not flagged: this patient is likely below the high-risk group.";
+}
+
+function decimals(step) {
+  return step < 0.1 ? 2 : step < 1 ? 1 : 0;
+}
+
+function segmented(container, options, current, onPick) {
+  options.forEach(([label, value]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.classList.toggle("on", value === current);
+    button.addEventListener("click", () => {
+      container.querySelectorAll("button").forEach(b => b.classList.remove("on"));
+      button.classList.add("on");
+      onPick(value);
+    });
+    container.appendChild(button);
+  });
+}
+
+function build() {
+  const box = document.getElementById("inputs");
+  DATA.inputs.forEach(input => {
+    state[input.name] = input.value;
+    const field = document.createElement("div");
+    field.className = "field";
+    const top = `<div class="field-top"><label for="${input.name}">${input.label}
+      <span class="unit">${input.unit}</span></label><output id="${input.name}-out"></output></div>`;
+    field.innerHTML = top;
+    if (input.name === "sex") {
+      const seg = document.createElement("div");
+      seg.className = "seg";
+      segmented(seg, [["Group 1", 1], ["Group 2", 2]], input.value, v => {
+        state.sex = v;
+        update();
+      });
+      field.appendChild(seg);
+      field.querySelector("output").remove();
+    } else {
+      const slider = document.createElement("input");
+      Object.assign(slider, { type: "range", id: input.name, min: input.min, max: input.max,
+                              step: input.step, value: input.value });
+      const out = field.querySelector("output");
+      const show = () => (out.textContent = Number(slider.value).toFixed(decimals(input.step)));
+      slider.addEventListener("input", () => {
+        state[input.name] = Number(slider.value);
+        show();
+        update();
+      });
+      show();
+      field.appendChild(slider);
+    }
+    box.appendChild(field);
+  });
+
+  segmented(document.getElementById("models"), Object.keys(DATA.regressors).map(k => [k, k]), model, v => {
+    model = v;
+    update();
+  });
+  update();
+}
+
+build();
+</script>
+</body>
+</html>
